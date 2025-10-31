@@ -82,6 +82,26 @@ export default function AccountSettings() {
     }
   };
 
+  // --- 1. สร้างฟังก์ชัน Helper นี้ ---
+  // (ฟังก์ชันนี้จะแปลง URL ให้ถูกต้อง)
+  const getFullImageUrl = (url: string | undefined | null): string => {
+    if (!url) return ""; // ถ้าไม่มี URL ก็คืนค่าว่าง
+
+    // ถ้า URL เป็น URL เต็มแล้ว (เช่น http, https) หรือเป็น blob (รูป preview) ก็ใช้ได้เลย
+    if (url.startsWith("http") || url.startsWith("blob:")) {
+      return url;
+    }
+
+    // ถ้า URL เป็นแบบ Relative (เช่น /uploads/image.jpg)
+    if (url.startsWith("/")) {
+      const apiBaseUrl =
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
+      return `${apiBaseUrl}${url}`; // ต่อ Base URL เข้าไปข้างหน้า
+    }
+
+    return url; // คืนค่าเดิมถ้าไม่เข้าเงื่อนไข
+  };
+
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
 
@@ -120,7 +140,8 @@ export default function AccountSettings() {
           email: data.email || "",
           phone: formatPhoneNumber(data.phoneNumber) || "",
           address: data.address || "",
-          profileUrl: data.profileUrl || "",
+          // --- 2. แก้ไข `fetchProfile` ---
+          profileUrl: getFullImageUrl(data.profileUrl), // <-- ใช้ฟังก์ชันใหม่
         });
       } catch {
         // fallback mock data
@@ -218,12 +239,13 @@ export default function AccountSettings() {
     return formatted;
   };
 
-  const handleProfilePictureChange = (url: string) => {
-    setProfile(prev => ({
-      ...prev,
-      profileUrl: url
-    }));
-  };
+  // --- 4. ลบฟังก์ชัน `handleProfilePictureChange` นี้ทิ้ง (เราไม่ได้ใช้แล้ว) ---
+  // const handleProfilePictureChange = (url: string) => {
+  //   setProfile(prev => ({
+  //     ...prev,
+  //     profileUrl: url
+  //   }));
+  // };
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement> | { target: { name: string; value: any } },
@@ -256,8 +278,8 @@ export default function AccountSettings() {
     return true;
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // (ฟังก์ชัน handleSave ที่เราแก้ไปแล้ว)
+  const handleSave = async (e: React.FormEvent, file: File | null) => {
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       
@@ -272,22 +294,21 @@ export default function AccountSettings() {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
       const apiUrl = `${apiBaseUrl}/auth/update-profile`;
 
-      const requestBody = {
-        fullName: profile.name,
-        email: profile.email,
-        phoneNumber: profile.phone?.replace(/\D/g, "") || "",
-        profileUrl: profile.profileUrl || "",
-      };
+      const formData = new FormData();
+      formData.append('fullName', profile.name);
+      formData.append('email', profile.email);
+      formData.append('phoneNumber', profile.phone?.replace(/\D/g, "") || "");
+
+      if (file) {
+        formData.append('profileImage', file);
+      }
 
       const response = await fetch(apiUrl, {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${cleanToken}`,
-          'Accept': 'application/json'
         },
-        credentials: 'include',
-        body: JSON.stringify(requestBody)
+        body: formData 
       });
 
       const responseText = await response.text();
@@ -306,6 +327,19 @@ export default function AccountSettings() {
           return;
         }
         throw new Error(responseData.message || `Failed to update profile: ${response.statusText}`);
+      }
+
+      if (responseData.user) {
+        const formattedPhone = formatPhoneNumber(responseData.user.phoneNumber || "");
+
+        setProfile({
+          name: responseData.user.fullName || "ผู้ใช้",
+          email: responseData.user.email || "",
+          phone: formattedPhone,
+          address: profile.address,
+          // --- 3. แก้ไข `handleSave` ---
+          profileUrl: getFullImageUrl(responseData.user.profileUrl), // <-- ใช้ฟังก์ชันใหม่
+        });
       }
 
       setIsEditing(false);
@@ -390,6 +424,8 @@ export default function AccountSettings() {
                 <div className="flex items-start space-x-6">
                   <div className="flex-shrink-0">
                     <div className="relative h-32 w-32 rounded-full overflow-hidden border-2 border-gray-200">
+                      
+                      {/* ส่วนนี้จะแสดงผลถูกต้อง เพราะ profile.profileUrl ถูกแก้ให้เป็น URL เต็มแล้ว */}
                       {profile.profileUrl ? (
                         <Image
                           src={profile.profileUrl}
@@ -471,7 +507,8 @@ export default function AccountSettings() {
               profile={profile}
               handleInputChange={handleInputChange}
               handleSubmit={handleSave}
-              onProfilePictureChange={handleProfilePictureChange}
+              // --- 4. ลบ Prop นี้ทิ้ง ---
+              // onProfilePictureChange={handleProfilePictureChange} 
             />
 
             {/* Change Password Section */}
